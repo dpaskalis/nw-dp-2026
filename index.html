@@ -245,8 +245,9 @@ select.f-input{-webkit-appearance:none;appearance:none}
 "use strict";
 /* ================= Data layer ================= */
 const LS_KEY = "networth.v1";
-const CURRENCIES = ["IDR","USD","SGD","EUR","GBP","JPY","KRW","AUD"];
-const DEFAULT_FX = {USD:16200,SGD:12700,EUR:18900,GBP:21900,JPY:110,KRW:12,AUD:10800};
+const CURRENCIES = ["IDR","USD","SGD","EUR","GBP","JPY","KRW","AUD","GOLD"];
+const DEFAULT_FX = {USD:16200,SGD:12700,EUR:18900,GBP:21900,JPY:110,KRW:12,AUD:10800,GOLD:2300000};
+const OZ_TO_GRAM = 31.1034768; // troy ounce
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
 const todayStr = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
 
@@ -260,22 +261,34 @@ function load(){
 }
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
 
-/* Live FX: open.er-api.com (ExchangeRate-API open feed, daily central-bank mid-market rates) */
+/* Live rates:
+   - Forex: open.er-api.com (daily central-bank mid-market rates)
+   - Gold:  fawazahmed0 currency CDN (XAU, daily) → converted to IDR per gram */
 async function fetchRates(force){
+  try{
   if(!DB.fxAuto && !force) return;
   if(!force && DB.fxTime && Date.now()-DB.fxTime < 6*3600e3) return; // ≤6h old: skip
-  try{
-    const r = await fetch("https://open.er-api.com/v6/latest/USD", {cache:"no-store"});
-    const j = await r.json();
-    if(j.result!=="success" || !j.rates || !j.rates.IDR) return;
-    const idrPerUsd = j.rates.IDR;
+  const get = u => fetch(u,{cache:"no-store"}).then(r=>r.json());
+  const [fx, gold] = await Promise.allSettled([
+    get("https://open.er-api.com/v6/latest/USD"),
+    get("https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/xau.min.json")
+      .catch(()=>get("https://latest.currency-api.pages.dev/v1/currencies/xau.min.json"))
+  ]);
+  let ok = false;
+  if(fx.status==="fulfilled" && fx.value && fx.value.result==="success" && fx.value.rates && fx.value.rates.IDR){
+    const idrPerUsd = fx.value.rates.IDR;
     for(const c of CURRENCIES){
-      if(c==="IDR") continue;
-      if(j.rates[c]) DB.fx[c] = Math.round(idrPerUsd / j.rates[c] * 100) / 100;
+      if(c==="IDR" || c==="GOLD") continue;
+      if(fx.value.rates[c]) DB.fx[c] = Math.round(idrPerUsd / fx.value.rates[c] * 100) / 100;
     }
-    DB.fxTime = Date.now();
-    save(); render();
-    if(force) toast("Rates refreshed");
+    ok = true;
+  }
+  if(gold.status==="fulfilled" && gold.value && gold.value.xau && gold.value.xau.idr){
+    DB.fx.GOLD = Math.round(gold.value.xau.idr / OZ_TO_GRAM * 100) / 100;
+    ok = true;
+  }
+  if(ok){ DB.fxTime = Date.now(); save(); render(); if(force) toast("Rates refreshed"); }
+  else if(force) toast("Offline — using stored rates");
   }catch(e){ if(force) toast("Offline — using stored rates"); }
 }
 
@@ -337,8 +350,8 @@ function nwSeries(rangeDays){
 /* ================= Formatting ================= */
 const fmtIDRfull = v => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Math.round(v));
 function fmtNative(v,cur){
-  const zero = ["IDR","JPY","KRW"].includes(cur);
-  return new Intl.NumberFormat(cur==="IDR"?"id-ID":"en-US",{style:"currency",currency:cur,maximumFractionDigits:zero?0:2,minimumFractionDigits:0}).format(v);
+  if(cur==="GOLD") return new Intl.NumberFormat("en-US",{maximumFractionDigits:5}).format(v)+" g";
+  return new Intl.NumberFormat(cur==="IDR"?"id-ID":"en-US",{style:"currency",currency:cur,maximumFractionDigits:5,minimumFractionDigits:0}).format(v);
 }
 function fmtCompact(v){
   const s = v<0?"-":""; v=Math.abs(v);
@@ -353,7 +366,7 @@ function groupInput(el){
   const raw = el.value.replace(/[^\d.]/g,"");
   const [int, dec] = raw.split(".");
   let out = (int||"").replace(/\B(?=(\d{3})+(?!\d))/g,",");
-  if(raw.includes(".")) out += "." + (dec||"").slice(0,2);
+  if(raw.includes(".")) out += "." + (dec||"").slice(0,5);
   el.value = out;
 }
 const parseNum = s => parseFloat(String(s).replace(/,/g,"")) || 0;
@@ -462,10 +475,10 @@ function renderRows(elId, items, type){
     const btn = document.createElement("button");
     btn.className = "row"; btn.dataset.id = it.id;
     btn.innerHTML = `
-      <div class="row-ico ${it.type==="asset"?"a":"l"}">${it.type==="asset"?"💰":"💳"}</div>
+      <div class="row-ico ${it.type==="asset"?"a":"l"}">${it.currency==="GOLD"?"🪙":(it.type==="asset"?"💰":"💳")}</div>
       <div class="row-main">
         <div class="row-name">${esc(it.name)}</div>
-        <div class="row-sub">${it.currency}${last?" · updated "+fmtDate(last.date):""}</div>
+        <div class="row-sub">${it.currency==="GOLD"?"Gold · grams":it.currency}${last?" · updated "+fmtDate(last.date):""}</div>
       </div>
       <div class="row-end">
         <div class="row-val num">${last?fmtNative(last.value,it.currency):"—"}</div>
@@ -504,7 +517,7 @@ let sel = { itemId:null, isNew:false, newType:"asset", editEntryId:null };
 const valInput = document.getElementById("valInput");
 const dateInput = document.getElementById("dateInput");
 const newCurSel = document.getElementById("newCur");
-newCurSel.innerHTML = CURRENCIES.map(c=>`<option>${c}</option>`).join("");
+newCurSel.innerHTML = CURRENCIES.map(c=>`<option value="${c}">${c==="GOLD"?"GOLD — grams":c}</option>`).join("");
 
 function openUpdate(opts={}){
   sel = { itemId: opts.itemId||null, isNew: !!opts.isNew, newType: opts.newType||"asset", editEntryId: opts.editEntryId||null };
@@ -549,7 +562,7 @@ function syncCurLabel(){
   let cur = "IDR";
   if(sel.isNew) cur = newCurSel.value;
   else if(sel.itemId) cur = itemById(sel.itemId)?.currency || "IDR";
-  document.getElementById("valCur").textContent = "("+cur+")";
+  document.getElementById("valCur").textContent = cur==="GOLD" ? "(grams)" : "("+cur+")";
 }
 function syncHint(){
   syncCurLabel();
@@ -663,7 +676,7 @@ function renderSettings(){
   for(const c of CURRENCIES.filter(c=>c!=="IDR")){
     const r = document.createElement("div");
     r.className = "fx-row";
-    r.innerHTML = `<div class="cur">${c}</div><input class="f-input num" inputmode="decimal" value="${DB.fx[c]??""}">`;
+    r.innerHTML = `<div class="cur">${c==="GOLD"?"Au /g":c}</div><input class="f-input num" inputmode="decimal" value="${DB.fx[c]??""}">`;
     r.querySelector("input").onchange = ev=>{
       const v = parseFloat(ev.target.value.replace(/,/g,""));
       if(v>0){ DB.fx[c]=v; save(); render(); toast(c+" rate updated"); }
