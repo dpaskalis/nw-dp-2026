@@ -504,7 +504,6 @@ function makeRow(it){
   const btn = document.createElement("button");
   btn.className = "row"; btn.dataset.id = it.id;
   btn.innerHTML = `
-    <div class="row-ico ${it.type==="asset"?"a":"l"}">${CAT_ICONS[it.category]||"💰"}</div>
     <div class="row-main">
       <div class="row-name">${esc(it.name)}</div>
       <div class="row-sub">${it.currency==="GOLD"?"Gold · grams":it.currency}${last?" · updated "+fmtDate(last.date):""}</div>
@@ -687,7 +686,6 @@ function refreshDetail(id){
   const body = document.getElementById("detailBody");
   body.innerHTML = `
     <div class="d-head">
-      <div class="row-ico ${it.type==="asset"?"a":"l"}">${it.type==="asset"?"💰":"💳"}</div>
       <div style="flex:1">
         <div class="sec-title">${esc(it.name)}</div>
         <div class="d-sub">${it.type==="asset"?"Asset":"Liability"} · ${it.currency}</div>
