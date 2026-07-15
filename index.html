@@ -350,7 +350,7 @@ function nwSeries(rangeDays){
 /* ================= Formatting ================= */
 const fmtIDRfull = v => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Math.round(v));
 function fmtNative(v,cur){
-  if(cur==="GOLD") return new Intl.NumberFormat("en-US",{maximumFractionDigits:5}).format(v)+" g";
+  if(cur==="GOLD") return new Intl.NumberFormat("id-ID",{maximumFractionDigits:5}).format(v)+" g";
   return new Intl.NumberFormat(cur==="IDR"?"id-ID":"en-US",{style:"currency",currency:cur,maximumFractionDigits:5,minimumFractionDigits:0}).format(v);
 }
 function fmtCompact(v){
@@ -362,14 +362,22 @@ function fmtCompact(v){
   return s+Math.round(v);
 }
 const fmtDate = d => new Date(d+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+/* Input accepts BOTH "," and "." as the decimal separator (iOS decimal pad
+   shows "," on Indonesian keyboards). Thousands are grouped with thin spaces
+   so separators are never ambiguous. Display: id-style "1 574 645,5". */
+function normalizeNum(s){
+  let raw = String(s).replace(/[^\d.,]/g,"");
+  raw = raw.replace(/[.,](?=.*[.,])/g,"");   // keep only the LAST separator typed
+  return raw.replace(",", ".");               // canonical: dot decimal
+}
 function groupInput(el){
-  const raw = el.value.replace(/[^\d.]/g,"");
+  const raw = normalizeNum(el.value);
   const [int, dec] = raw.split(".");
-  let out = (int||"").replace(/\B(?=(\d{3})+(?!\d))/g,",");
-  if(raw.includes(".")) out += "." + (dec||"").slice(0,5);
+  let out = (int||"").replace(/\B(?=(\d{3})+(?!\d))/g," ");
+  if(raw.includes(".")) out += "," + (dec||"").slice(0,5);
   el.value = out;
 }
-const parseNum = s => parseFloat(String(s).replace(/,/g,"")) || 0;
+const parseNum = s => parseFloat(normalizeNum(s)) || 0;
 
 /* ================= SVG chart ================= */
 function drawChart(svg, pts, {height=190, stroke="#5eead4", scrub=null}={}){
@@ -678,7 +686,7 @@ function renderSettings(){
     r.className = "fx-row";
     r.innerHTML = `<div class="cur">${c==="GOLD"?"Au /g":c}</div><input class="f-input num" inputmode="decimal" value="${DB.fx[c]??""}">`;
     r.querySelector("input").onchange = ev=>{
-      const v = parseFloat(ev.target.value.replace(/,/g,""));
+      const v = parseNum(ev.target.value);
       if(v>0){ DB.fx[c]=v; save(); render(); toast(c+" rate updated"); }
     };
     fl.appendChild(r);
