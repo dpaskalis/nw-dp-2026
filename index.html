@@ -1,0 +1,683 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<title>Net Worth</title>
+<meta name="theme-color" content="#0a0c10">
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Net Worth">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>
+:root{
+  --bg:#0a0c10; --card:#141821; --card2:#1b2029; --line:#242b37;
+  --text:#f2f4f8; --muted:#8b93a3; --faint:#5a6272;
+  --green:#34d98b; --green-dim:rgba(52,217,139,.12);
+  --red:#ff5d5d; --red-dim:rgba(255,93,93,.12);
+  --accent:#5eead4; --accent2:#34d98b;
+  --radius:18px;
+  --sat:env(safe-area-inset-top); --sab:env(safe-area-inset-bottom);
+}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+  min-height:100vh; overscroll-behavior-y:none;
+  padding-bottom:calc(110px + var(--sab));
+}
+button{font-family:inherit;border:none;background:none;color:inherit;cursor:pointer}
+input,select{font-family:inherit}
+.num{font-variant-numeric:tabular-nums}
+
+/* ---------- Header ---------- */
+header{padding:calc(14px + var(--sat)) 20px 6px}
+.hdr-row{display:flex;justify-content:space-between;align-items:center}
+.hdr-title{font-size:14px;font-weight:600;color:var(--muted);letter-spacing:.4px;text-transform:uppercase}
+.icon-btn{width:38px;height:38px;border-radius:12px;background:var(--card);display:flex;align-items:center;justify-content:center;color:var(--muted);transition:transform .15s}
+.icon-btn:active{transform:scale(.9)}
+.networth{font-size:40px;font-weight:800;letter-spacing:-1.2px;margin-top:6px;line-height:1.1}
+.nw-delta{display:inline-flex;align-items:center;gap:5px;margin-top:8px;font-size:14px;font-weight:600;padding:4px 10px;border-radius:99px}
+.nw-delta.up{color:var(--green);background:var(--green-dim)}
+.nw-delta.down{color:var(--red);background:var(--red-dim)}
+.nw-scrub{font-size:12px;color:var(--faint);margin-top:6px;height:15px}
+
+/* ---------- Chart ---------- */
+.chart-wrap{padding:8px 8px 0}
+#mainChart{width:100%;height:190px;touch-action:pan-y;display:block}
+.ranges{display:flex;gap:6px;padding:10px 20px 4px}
+.ranges button{flex:1;padding:7px 0;border-radius:10px;font-size:13px;font-weight:600;color:var(--muted);transition:all .15s}
+.ranges button.on{background:var(--card2);color:var(--text)}
+
+/* ---------- Summary pills ---------- */
+.pills{display:flex;gap:10px;padding:14px 20px 4px}
+.pill{flex:1;background:var(--card);border-radius:var(--radius);padding:14px 16px}
+.pill .lbl{font-size:12px;font-weight:600;color:var(--muted);display:flex;align-items:center;gap:6px}
+.pill .dot{width:8px;height:8px;border-radius:99px}
+.pill .val{font-size:17px;font-weight:700;margin-top:5px;letter-spacing:-.3px}
+
+/* ---------- Sections ---------- */
+.section{padding:18px 20px 0}
+.sec-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.sec-title{font-size:16px;font-weight:700;letter-spacing:-.2px}
+.sec-add{font-size:13px;font-weight:600;color:var(--accent)}
+.rows{background:var(--card);border-radius:var(--radius);overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;padding:14px 16px;width:100%;text-align:left;position:relative}
+.row + .row::before{content:"";position:absolute;top:0;left:16px;right:0;height:1px;background:var(--line)}
+.row:active{background:var(--card2)}
+.row-ico{width:40px;height:40px;border-radius:13px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.row-ico.a{background:var(--green-dim)}
+.row-ico.l{background:var(--red-dim)}
+.row-main{flex:1;min-width:0}
+.row-name{font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row-sub{font-size:12px;color:var(--muted);margin-top:2px}
+.row-end{text-align:right}
+.row-val{font-size:15px;font-weight:700;letter-spacing:-.2px}
+.row-chg{font-size:12px;font-weight:600;margin-top:2px}
+.row-chg.up{color:var(--green)} .row-chg.down{color:var(--red)} .row-chg.flat{color:var(--faint)}
+.empty{padding:28px 16px;text-align:center;color:var(--faint);font-size:14px;line-height:1.5}
+.empty b{color:var(--muted)}
+
+/* ---------- FAB ---------- */
+.fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(22px + var(--sab));
+  display:flex;align-items:center;gap:8px;padding:15px 26px;border-radius:99px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));color:#062018;
+  font-size:16px;font-weight:800;box-shadow:0 8px 30px rgba(52,217,139,.35);
+  transition:transform .15s;z-index:50}
+.fab:active{transform:translateX(-50%) scale(.94)}
+
+/* ---------- Sheets ---------- */
+.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .25s;z-index:90;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}
+.backdrop.show{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:0;z-index:100;background:var(--card);
+  border-radius:24px 24px 0 0;padding:10px 20px calc(24px + var(--sab));
+  transform:translateY(105%);transition:transform .32s cubic-bezier(.32,.72,.28,1);
+  max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.sheet.show{transform:translateY(0)}
+.grab{width:38px;height:5px;border-radius:99px;background:var(--line);margin:2px auto 14px}
+.sheet h2{font-size:19px;font-weight:800;letter-spacing:-.3px;margin-bottom:16px}
+.sheet .close-x{position:absolute;top:16px;right:16px;width:30px;height:30px;border-radius:99px;background:var(--card2);color:var(--muted);font-size:15px;display:flex;align-items:center;justify-content:center}
+
+.f-label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin:16px 0 8px}
+.f-label:first-of-type{margin-top:0}
+.f-input{width:100%;background:var(--card2);border:1px solid var(--line);border-radius:14px;
+  padding:14px 16px;font-size:17px;font-weight:600;color:var(--text);outline:none}
+.f-input:focus{border-color:var(--accent)}
+input[type=date].f-input{-webkit-appearance:none;appearance:none;min-height:50px;color-scheme:dark}
+select.f-input{-webkit-appearance:none;appearance:none}
+.big-input{font-size:26px;font-weight:800;letter-spacing:-.5px;text-align:left}
+.seg{display:flex;background:var(--card2);border-radius:13px;padding:4px;gap:4px}
+.seg button{flex:1;padding:10px 0;border-radius:10px;font-size:14px;font-weight:700;color:var(--muted);transition:all .15s}
+.seg button.on.a{background:var(--green-dim);color:var(--green)}
+.seg button.on.l{background:var(--red-dim);color:var(--red)}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:9px 14px;border-radius:99px;background:var(--card2);border:1px solid var(--line);font-size:14px;font-weight:600;color:var(--muted);transition:all .15s}
+.chip.on{border-color:var(--accent);color:var(--text);background:rgba(94,234,212,.08)}
+.chip.new{border-style:dashed}
+.primary-btn{width:100%;margin-top:22px;padding:16px;border-radius:16px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));color:#062018;
+  font-size:16px;font-weight:800;transition:transform .12s,opacity .15s}
+.primary-btn:active{transform:scale(.98)}
+.primary-btn:disabled{opacity:.35}
+.danger-btn{width:100%;margin-top:10px;padding:14px;border-radius:16px;background:var(--red-dim);color:var(--red);font-size:15px;font-weight:700}
+.ghost-btn{width:100%;margin-top:10px;padding:14px;border-radius:16px;background:var(--card2);color:var(--text);font-size:15px;font-weight:700}
+.hint{font-size:12px;color:var(--faint);margin-top:8px;line-height:1.5}
+
+/* ---------- Detail sheet ---------- */
+.d-head{display:flex;align-items:center;gap:12px;margin-bottom:4px}
+.d-val{font-size:30px;font-weight:800;letter-spacing:-.8px;margin:6px 0 2px}
+.d-sub{font-size:13px;color:var(--muted)}
+#detailChart{width:100%;height:130px;display:block;margin:10px 0 4px}
+.h-row{display:flex;align-items:center;gap:10px;padding:13px 4px;border-bottom:1px solid var(--line)}
+.h-date{flex:1;font-size:14px;color:var(--muted);font-weight:500}
+.h-val{font-size:15px;font-weight:700}
+.h-btn{width:32px;height:32px;border-radius:10px;background:var(--card2);display:flex;align-items:center;justify-content:center;font-size:14px}
+.h-btn.del{color:var(--red)}
+.fx-row{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.fx-row .cur{width:52px;font-size:15px;font-weight:700}
+.fx-row input{flex:1}
+.toast{position:fixed;top:calc(14px + var(--sat));left:50%;transform:translate(-50%,-80px);
+  background:var(--card2);border:1px solid var(--line);color:var(--text);font-size:14px;font-weight:600;
+  padding:11px 20px;border-radius:99px;z-index:200;transition:transform .3s cubic-bezier(.32,.72,.28,1);box-shadow:0 6px 24px rgba(0,0,0,.4)}
+.toast.show{transform:translate(-50%,0)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-row">
+    <div class="hdr-title">Net Worth</div>
+    <button class="icon-btn" id="settingsBtn" aria-label="Settings">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    </button>
+  </div>
+  <div class="networth num" id="nwTotal">Rp 0</div>
+  <div><span class="nw-delta up num" id="nwDelta" style="display:none"></span></div>
+  <div class="nw-scrub num" id="nwScrub"></div>
+</header>
+
+<div class="chart-wrap"><svg id="mainChart"></svg></div>
+<div class="ranges" id="ranges">
+  <button data-r="30">1M</button><button data-r="90">3M</button>
+  <button data-r="180">6M</button><button data-r="365">1Y</button>
+  <button data-r="0" class="on">All</button>
+</div>
+
+<div class="pills">
+  <div class="pill"><div class="lbl"><span class="dot" style="background:var(--green)"></span>Assets</div><div class="val num" id="pillAssets">–</div></div>
+  <div class="pill"><div class="lbl"><span class="dot" style="background:var(--red)"></span>Liabilities</div><div class="val num" id="pillLiab">–</div></div>
+</div>
+
+<div class="section">
+  <div class="sec-head"><div class="sec-title">Assets</div><button class="sec-add" data-newtype="asset">+ Add</button></div>
+  <div class="rows" id="assetRows"></div>
+</div>
+<div class="section">
+  <div class="sec-head"><div class="sec-title">Liabilities</div><button class="sec-add" data-newtype="liability">+ Add</button></div>
+  <div class="rows" id="liabRows"></div>
+</div>
+
+<button class="fab" id="fabBtn">
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  Update
+</button>
+
+<div class="backdrop" id="backdrop"></div>
+
+<!-- Update / add value sheet -->
+<div class="sheet" id="updateSheet">
+  <div class="grab"></div>
+  <h2 id="updTitle">Update value</h2>
+  <div id="pickBlock">
+    <div class="f-label">Item</div>
+    <div class="chips" id="itemChips"></div>
+  </div>
+  <div id="newBlock" style="display:none">
+    <div class="f-label">Type</div>
+    <div class="seg" id="typeSeg">
+      <button data-t="asset" class="on a">Asset</button>
+      <button data-t="liability" class="l">Liability</button>
+    </div>
+    <div class="f-label">Name</div>
+    <input class="f-input" id="newName" placeholder="e.g. BCA Savings, Apartment, Mortgage" autocomplete="off">
+    <div class="f-label">Currency</div>
+    <select class="f-input" id="newCur"></select>
+  </div>
+  <div class="f-label">Value <span id="valCur" style="color:var(--faint)"></span></div>
+  <input class="f-input big-input num" id="valInput" inputmode="decimal" placeholder="0" autocomplete="off">
+  <div class="hint num" id="valHint"></div>
+  <div class="f-label">Date</div>
+  <input class="f-input num" type="date" id="dateInput">
+  <button class="primary-btn" id="saveBtn">Save</button>
+</div>
+
+<!-- Item detail sheet -->
+<div class="sheet" id="detailSheet">
+  <div class="grab"></div>
+  <div id="detailBody"></div>
+</div>
+
+<!-- Settings sheet -->
+<div class="sheet" id="settingsSheet">
+  <div class="grab"></div>
+  <h2>Settings</h2>
+  <div class="f-label">Exchange rates — IDR per 1 unit</div>
+  <div id="fxList"></div>
+  <div class="hint">Rates are manual. Update them occasionally so conversions stay honest.</div>
+  <div class="f-label">Data</div>
+  <button class="ghost-btn" id="exportBtn" style="margin-top:0">Export backup (JSON)</button>
+  <button class="ghost-btn" id="importBtn">Import backup</button>
+  <input type="file" id="importFile" accept=".json,application/json" style="display:none">
+  <div class="hint">Your data lives only on this device. Export a backup monthly — one Safari reset wipes everything.</div>
+  <button class="danger-btn" id="wipeBtn">Erase all data</button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+/* ================= Data layer ================= */
+const LS_KEY = "networth.v1";
+const CURRENCIES = ["IDR","USD","SGD","EUR","GBP","JPY","KRW","AUD"];
+const DEFAULT_FX = {USD:16200,SGD:12700,EUR:18900,GBP:21900,JPY:110,KRW:12,AUD:10800};
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+const todayStr = () => { const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); };
+
+let DB = load();
+function load(){
+  try{
+    const raw = localStorage.getItem(LS_KEY);
+    if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.items) && Array.isArray(d.entries)){ d.fx = Object.assign({},DEFAULT_FX,d.fx||{}); return d; } }
+  }catch(e){}
+  return { items:[], entries:[], fx:{...DEFAULT_FX} };
+}
+function save(){ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+
+const toIDR = (v,cur) => cur==="IDR" ? v : v * (DB.fx[cur]||0);
+const itemById = id => DB.items.find(i=>i.id===id);
+function entriesOf(id){ return DB.entries.filter(e=>e.itemId===id).sort((a,b)=> a.date===b.date ? a.ts-b.ts : (a.date<b.date?-1:1)); }
+function latestEntry(id, onOrBefore){
+  const es = entriesOf(id);
+  if(!onOrBefore) return es[es.length-1]||null;
+  let last=null; for(const e of es){ if(e.date<=onOrBefore) last=e; else break; } return last;
+}
+function itemValueIDR(item, onOrBefore){
+  const e = latestEntry(item.id, onOrBefore);
+  return e ? toIDR(e.value, item.currency) : null;
+}
+function totals(onOrBefore){
+  let a=0,l=0,any=false;
+  for(const it of DB.items){
+    const v = itemValueIDR(it, onOrBefore);
+    if(v===null) continue; any=true;
+    if(it.type==="asset") a+=v; else l+=v;
+  }
+  return any ? {assets:a, liab:l, nw:a-l} : null;
+}
+function nwSeries(rangeDays){
+  const dates = [...new Set(DB.entries.map(e=>e.date))].sort();
+  if(!dates.length) return [];
+  let from = null;
+  if(rangeDays>0){
+    const d = new Date(); d.setDate(d.getDate()-rangeDays);
+    from = d.toISOString().slice(0,10);
+  }
+  const pts = [];
+  if(from){
+    const base = totals(from);
+    if(base && dates[0] <= from) pts.push({date:from, v:base.nw});
+  }
+  for(const d of dates){
+    if(from && d < from) continue;
+    const t = totals(d);
+    if(t) pts.push({date:d, v:t.nw});
+  }
+  const today = todayStr();
+  if(pts.length && pts[pts.length-1].date !== today){
+    const t = totals(today); if(t) pts.push({date:today, v:t.nw});
+  }
+  return pts;
+}
+
+/* ================= Formatting ================= */
+const fmtIDRfull = v => "Rp " + new Intl.NumberFormat("id-ID",{maximumFractionDigits:0}).format(Math.round(v));
+function fmtNative(v,cur){
+  const zero = ["IDR","JPY","KRW"].includes(cur);
+  return new Intl.NumberFormat(cur==="IDR"?"id-ID":"en-US",{style:"currency",currency:cur,maximumFractionDigits:zero?0:2,minimumFractionDigits:0}).format(v);
+}
+function fmtCompact(v){
+  const s = v<0?"-":""; v=Math.abs(v);
+  if(v>=1e12) return s+(v/1e12).toFixed(2).replace(/\.?0+$/,"")+" T";
+  if(v>=1e9)  return s+(v/1e9 ).toFixed(2).replace(/\.?0+$/,"")+" M";
+  if(v>=1e6)  return s+(v/1e6 ).toFixed(1).replace(/\.?0+$/,"")+" jt";
+  if(v>=1e3)  return s+(v/1e3 ).toFixed(0)+" rb";
+  return s+Math.round(v);
+}
+const fmtDate = d => new Date(d+"T12:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"});
+function groupInput(el){
+  const raw = el.value.replace(/[^\d.]/g,"");
+  const [int, dec] = raw.split(".");
+  let out = (int||"").replace(/\B(?=(\d{3})+(?!\d))/g,",");
+  if(raw.includes(".")) out += "." + (dec||"").slice(0,2);
+  el.value = out;
+}
+const parseNum = s => parseFloat(String(s).replace(/,/g,"")) || 0;
+
+/* ================= SVG chart ================= */
+function drawChart(svg, pts, {height=190, stroke="#5eead4", scrub=null}={}){
+  const W = svg.clientWidth || 360, H = height;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+  if(pts.length===0){
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#5a6272" font-size="13" text-anchor="middle">No data yet</text>`;
+    return;
+  }
+  const P = pts.length===1 ? [pts[0],{...pts[0]}] : pts;
+  const t0 = new Date(P[0].date).getTime(), t1 = new Date(P[P.length-1].date).getTime();
+  const span = Math.max(t1-t0, 1);
+  let lo = Math.min(...P.map(p=>p.v)), hi = Math.max(...P.map(p=>p.v));
+  if(lo===hi){ lo-=Math.abs(lo)*0.05||1; hi+=Math.abs(hi)*0.05||1; }
+  const pad = (hi-lo)*0.12; lo-=pad; hi+=pad;
+  const px = 14, pt2 = 12, pb = 22;
+  const X = d => px + (new Date(d).getTime()-t0)/span * (W-2*px);
+  const Y = v => pt2 + (1-(v-lo)/(hi-lo)) * (H-pt2-pb);
+  const gid = "g"+Math.random().toString(36).slice(2,7);
+  let path = "", area = "";
+  P.forEach((p,i)=>{ const c=(i?"L":"M")+X(p.date).toFixed(1)+" "+Y(p.v).toFixed(1); path+=c; area+=c; });
+  area += `L${X(P[P.length-1].date).toFixed(1)} ${H-pb}L${X(P[0].date).toFixed(1)} ${H-pb}Z`;
+  const rising = P[P.length-1].v >= P[0].v;
+  const col = stroke==="auto" ? (rising?"#34d98b":"#ff5d5d") : stroke;
+  svg.innerHTML = `
+    <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="${col}" stop-opacity=".28"/>
+      <stop offset="1" stop-color="${col}" stop-opacity="0"/>
+    </linearGradient></defs>
+    <line x1="${px}" y1="${H-pb}" x2="${W-px}" y2="${H-pb}" stroke="#242b37" stroke-width="1"/>
+    <path d="${area}" fill="url(#${gid})"/>
+    <path d="${path}" fill="none" stroke="${col}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>
+    <circle cx="${X(P[P.length-1].date)}" cy="${Y(P[P.length-1].v)}" r="4" fill="${col}"/>
+    <text x="${px}" y="${H-7}" fill="#5a6272" font-size="10">${fmtDate(P[0].date)}</text>
+    <text x="${W-px}" y="${H-7}" fill="#5a6272" font-size="10" text-anchor="end">${fmtDate(P[P.length-1].date)}</text>
+    <g id="scrubG" style="display:none">
+      <line id="scrubL" y1="${pt2}" y2="${H-pb}" stroke="#8b93a3" stroke-width="1" stroke-dasharray="3 3"/>
+      <circle id="scrubC" r="5" fill="${col}" stroke="#0a0c10" stroke-width="2"/>
+    </g>`;
+  if(scrub){
+    const g = svg.querySelector("#scrubG"), ln = svg.querySelector("#scrubL"), c = svg.querySelector("#scrubC");
+    const move = ev => {
+      const r = svg.getBoundingClientRect();
+      const x = ((ev.touches?ev.touches[0].clientX:ev.clientX) - r.left) * (W/r.width);
+      let best=P[0], bd=1e18;
+      for(const p of P){ const d=Math.abs(X(p.date)-x); if(d<bd){bd=d;best=p;} }
+      g.style.display=""; ln.setAttribute("x1",X(best.date)); ln.setAttribute("x2",X(best.date));
+      c.setAttribute("cx",X(best.date)); c.setAttribute("cy",Y(best.v));
+      scrub(best);
+    };
+    const end = () => { g.style.display="none"; scrub(null); };
+    svg.onpointerdown = e=>{svg.setPointerCapture(e.pointerId);move(e)};
+    svg.onpointermove = e=>{if(e.buttons||e.pointerType==="touch")move(e)};
+    svg.onpointerup = svg.onpointercancel = end;
+  }
+}
+
+/* ================= Render ================= */
+let curRange = 0;
+function render(){
+  const t = totals();
+  const nwEl = document.getElementById("nwTotal");
+  nwEl.textContent = t ? fmtIDRfull(t.nw) : "Rp 0";
+  document.getElementById("pillAssets").textContent = t ? fmtIDRfull(t.assets) : "–";
+  document.getElementById("pillLiab").textContent = t ? fmtIDRfull(t.liab) : "–";
+
+  const pts = nwSeries(curRange);
+  const deltaEl = document.getElementById("nwDelta");
+  if(pts.length>=2){
+    const d = pts[pts.length-1].v - pts[0].v;
+    const pct = pts[0].v!==0 ? (d/Math.abs(pts[0].v)*100) : 0;
+    deltaEl.style.display="inline-flex";
+    deltaEl.className = "nw-delta num " + (d>=0?"up":"down");
+    deltaEl.textContent = (d>=0?"▲ ":"▼ ") + fmtCompact(Math.abs(d)) + "  (" + (pct>=0?"+":"") + pct.toFixed(1) + "%)";
+  } else deltaEl.style.display="none";
+
+  drawChart(document.getElementById("mainChart"), pts, {height:190, stroke:"auto", scrub: p=>{
+    document.getElementById("nwScrub").textContent = p ? fmtDate(p.date)+" · "+fmtIDRfull(p.v) : "";
+  }});
+
+  renderRows("assetRows", DB.items.filter(i=>i.type==="asset"), "asset");
+  renderRows("liabRows",  DB.items.filter(i=>i.type==="liability"), "liability");
+}
+function renderRows(elId, items, type){
+  const el = document.getElementById(elId);
+  if(!items.length){
+    el.innerHTML = `<div class="empty">${type==="asset"?"No assets yet.<br><b>Tap + Add to track your first one.</b>":"No liabilities. Keep it that way."}</div>`;
+    return;
+  }
+  el.innerHTML = "";
+  const sorted = [...items].sort((a,b)=>(itemValueIDR(b)||0)-(itemValueIDR(a)||0));
+  for(const it of sorted){
+    const es = entriesOf(it.id);
+    const last = es[es.length-1], prev = es[es.length-2];
+    let chg = `<span class="row-chg flat">–</span>`;
+    if(last && prev){
+      const d = last.value - prev.value;
+      const good = it.type==="asset" ? d>=0 : d<=0;
+      chg = d===0 ? `<span class="row-chg flat">no change</span>`
+        : `<span class="row-chg ${good?"up":"down"}">${d>0?"+":"−"}${fmtCompact(Math.abs(toIDR(d,it.currency)))}</span>`;
+    }
+    const btn = document.createElement("button");
+    btn.className = "row"; btn.dataset.id = it.id;
+    btn.innerHTML = `
+      <div class="row-ico ${it.type==="asset"?"a":"l"}">${it.type==="asset"?"💰":"💳"}</div>
+      <div class="row-main">
+        <div class="row-name">${esc(it.name)}</div>
+        <div class="row-sub">${it.currency}${last?" · updated "+fmtDate(last.date):""}</div>
+      </div>
+      <div class="row-end">
+        <div class="row-val num">${last?fmtNative(last.value,it.currency):"—"}</div>
+        ${chg}
+      </div>`;
+    btn.onclick = ()=>openDetail(it.id);
+    el.appendChild(btn);
+  }
+}
+const esc = s => s.replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+/* ================= Sheets ================= */
+const backdrop = document.getElementById("backdrop");
+let openSheetId = null;
+function openSheet(id){
+  closeSheet(true);
+  openSheetId = id;
+  backdrop.classList.add("show");
+  document.getElementById(id).classList.add("show");
+}
+function closeSheet(keepBackdrop){
+  if(openSheetId) document.getElementById(openSheetId).classList.remove("show");
+  openSheetId = null;
+  if(!keepBackdrop) backdrop.classList.remove("show");
+}
+backdrop.onclick = ()=>closeSheet();
+
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+/* ================= Update sheet ================= */
+let sel = { itemId:null, isNew:false, newType:"asset", editEntryId:null };
+const valInput = document.getElementById("valInput");
+const dateInput = document.getElementById("dateInput");
+const newCurSel = document.getElementById("newCur");
+newCurSel.innerHTML = CURRENCIES.map(c=>`<option>${c}</option>`).join("");
+
+function openUpdate(opts={}){
+  sel = { itemId: opts.itemId||null, isNew: !!opts.isNew, newType: opts.newType||"asset", editEntryId: opts.editEntryId||null };
+  document.getElementById("updTitle").textContent = sel.editEntryId ? "Edit entry" : (sel.isNew ? "New item" : "Update value");
+  document.getElementById("pickBlock").style.display = sel.editEntryId ? "none" : "";
+  valInput.value = ""; dateInput.value = todayStr();
+  if(sel.editEntryId){
+    const e = DB.entries.find(x=>x.id===sel.editEntryId);
+    if(e){ sel.itemId = e.itemId; valInput.value = ""; groupSet(e.value); dateInput.value = e.date; }
+  }
+  buildChips(); syncNewBlock(); syncHint();
+  openSheet("updateSheet");
+  if(!sel.editEntryId && !sel.itemId && !sel.isNew && DB.items.length===0){ sel.isNew = true; buildChips(); syncNewBlock(); }
+}
+function groupSet(v){ valInput.value = String(v); groupInput(valInput); }
+function buildChips(){
+  const el = document.getElementById("itemChips");
+  el.innerHTML = "";
+  for(const it of DB.items){
+    const b = document.createElement("button");
+    b.className = "chip" + (sel.itemId===it.id && !sel.isNew ? " on":"");
+    b.textContent = it.name;
+    b.onclick = ()=>{ sel.itemId=it.id; sel.isNew=false; buildChips(); syncNewBlock(); syncHint(); };
+    el.appendChild(b);
+  }
+  const nb = document.createElement("button");
+  nb.className = "chip new" + (sel.isNew?" on":"");
+  nb.textContent = "+ New item";
+  nb.onclick = ()=>{ sel.isNew=true; sel.itemId=null; buildChips(); syncNewBlock(); syncHint(); };
+  el.appendChild(nb);
+}
+function syncNewBlock(){
+  document.getElementById("newBlock").style.display = sel.isNew ? "" : "none";
+  if(sel.isNew){
+    [...document.querySelectorAll("#typeSeg button")].forEach(b=>{
+      b.className = (b.dataset.t===sel.newType ? "on ":"") + (b.dataset.t==="asset"?"a":"l");
+    });
+  }
+  syncCurLabel();
+}
+function syncCurLabel(){
+  let cur = "IDR";
+  if(sel.isNew) cur = newCurSel.value;
+  else if(sel.itemId) cur = itemById(sel.itemId)?.currency || "IDR";
+  document.getElementById("valCur").textContent = "("+cur+")";
+}
+function syncHint(){
+  syncCurLabel();
+  const v = parseNum(valInput.value);
+  const cur = sel.isNew ? newCurSel.value : (sel.itemId ? itemById(sel.itemId)?.currency : "IDR");
+  const h = document.getElementById("valHint");
+  h.textContent = (v && cur!=="IDR") ? "≈ "+fmtIDRfull(toIDR(v,cur)) : (v ? fmtIDRfull(v).replace("Rp","Rp") : "");
+  if(v && cur==="IDR") h.textContent = v>=1e6 ? "= "+fmtCompact(v) : "";
+}
+document.getElementById("typeSeg").onclick = e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  sel.newType = b.dataset.t; syncNewBlock();
+};
+newCurSel.onchange = syncHint;
+valInput.addEventListener("input", ()=>{ groupInput(valInput); syncHint(); });
+
+document.getElementById("saveBtn").onclick = ()=>{
+  const v = parseNum(valInput.value);
+  if(!v && v!==0 || valInput.value.trim()===""){ toast("Enter a value"); return; }
+  if(v<0){ toast("Use positive numbers"); return; }
+  const date = dateInput.value || todayStr();
+  if(sel.editEntryId){
+    const e = DB.entries.find(x=>x.id===sel.editEntryId);
+    if(e){ e.value=v; e.date=date; save(); render(); closeSheet(); toast("Entry updated"); refreshDetail(e.itemId); }
+    return;
+  }
+  let itemId = sel.itemId;
+  if(sel.isNew){
+    const name = document.getElementById("newName").value.trim();
+    if(!name){ toast("Name the item"); return; }
+    const it = { id: uid(), name, type: sel.newType, currency: newCurSel.value };
+    DB.items.push(it); itemId = it.id;
+    document.getElementById("newName").value = "";
+  }
+  if(!itemId){ toast("Pick an item"); return; }
+  DB.entries.push({ id: uid(), itemId, value: v, date, ts: Date.now() });
+  save(); render(); closeSheet(); toast("Saved");
+};
+
+document.getElementById("fabBtn").onclick = ()=>openUpdate();
+document.querySelectorAll(".sec-add").forEach(b=>{
+  b.onclick = ()=>openUpdate({isNew:true, newType:b.dataset.newtype});
+});
+
+/* ================= Detail sheet ================= */
+let detailId = null;
+function openDetail(id){ detailId = id; refreshDetail(id); openSheet("detailSheet"); }
+function refreshDetail(id){
+  const it = itemById(id); if(!it) return;
+  const es = entriesOf(id);
+  const last = es[es.length-1];
+  const body = document.getElementById("detailBody");
+  body.innerHTML = `
+    <div class="d-head">
+      <div class="row-ico ${it.type==="asset"?"a":"l"}">${it.type==="asset"?"💰":"💳"}</div>
+      <div style="flex:1">
+        <div class="sec-title">${esc(it.name)}</div>
+        <div class="d-sub">${it.type==="asset"?"Asset":"Liability"} · ${it.currency}</div>
+      </div>
+      <button class="h-btn" id="renameBtn" title="Rename">✏️</button>
+    </div>
+    <div class="d-val num">${last?fmtNative(last.value,it.currency):"—"}</div>
+    <div class="d-sub num">${last && it.currency!=="IDR" ? "≈ "+fmtIDRfull(toIDR(last.value,it.currency)) : ""}</div>
+    <svg id="detailChart"></svg>
+    <div class="f-label">History</div>
+    <div id="histList"></div>
+    <button class="primary-btn" id="detUpdateBtn">Update value</button>
+    <button class="danger-btn" id="delItemBtn">Delete this item</button>`;
+  drawChart(body.querySelector("#detailChart"),
+    es.map(e=>({date:e.date, v:e.value})),
+    {height:130, stroke: it.type==="asset" ? "#34d98b" : "#ff5d5d"});
+  const hl = body.querySelector("#histList");
+  if(!es.length) hl.innerHTML = `<div class="empty">No entries yet.</div>`;
+  [...es].reverse().forEach(e=>{
+    const r = document.createElement("div");
+    r.className = "h-row";
+    r.innerHTML = `<div class="h-date num">${fmtDate(e.date)}</div>
+      <div class="h-val num">${fmtNative(e.value,it.currency)}</div>
+      <button class="h-btn" title="Edit">✏️</button>
+      <button class="h-btn del" title="Delete">🗑</button>`;
+    const [eb, db] = r.querySelectorAll(".h-btn");
+    eb.onclick = ()=>openUpdate({editEntryId:e.id});
+    db.onclick = ()=>{
+      if(!confirm("Delete this entry ("+fmtDate(e.date)+")?")) return;
+      DB.entries = DB.entries.filter(x=>x.id!==e.id);
+      save(); render(); refreshDetail(id); toast("Entry deleted");
+    };
+    hl.appendChild(r);
+  });
+  body.querySelector("#detUpdateBtn").onclick = ()=>openUpdate({itemId:id});
+  body.querySelector("#renameBtn").onclick = ()=>{
+    const n = prompt("Rename item", it.name);
+    if(n && n.trim()){ it.name = n.trim(); save(); render(); refreshDetail(id); }
+  };
+  body.querySelector("#delItemBtn").onclick = ()=>{
+    if(!confirm(`Delete "${it.name}" and its entire history? This cannot be undone.`)) return;
+    DB.items = DB.items.filter(x=>x.id!==id);
+    DB.entries = DB.entries.filter(x=>x.itemId!==id);
+    save(); render(); closeSheet(); toast("Item deleted");
+  };
+}
+
+/* ================= Settings ================= */
+document.getElementById("settingsBtn").onclick = ()=>{
+  const fl = document.getElementById("fxList");
+  fl.innerHTML = "";
+  for(const c of CURRENCIES.filter(c=>c!=="IDR")){
+    const r = document.createElement("div");
+    r.className = "fx-row";
+    r.innerHTML = `<div class="cur">${c}</div><input class="f-input num" inputmode="decimal" value="${DB.fx[c]??""}">`;
+    r.querySelector("input").onchange = ev=>{
+      const v = parseFloat(ev.target.value.replace(/,/g,""));
+      if(v>0){ DB.fx[c]=v; save(); render(); toast(c+" rate updated"); }
+    };
+    fl.appendChild(r);
+  }
+  openSheet("settingsSheet");
+};
+document.getElementById("exportBtn").onclick = ()=>{
+  const blob = new Blob([JSON.stringify(DB,null,2)],{type:"application/json"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = "networth-backup-"+todayStr()+".json";
+  a.click(); URL.revokeObjectURL(a.href);
+  toast("Backup exported");
+};
+document.getElementById("importBtn").onclick = ()=>document.getElementById("importFile").click();
+document.getElementById("importFile").onchange = ev=>{
+  const f = ev.target.files[0]; if(!f) return;
+  const rd = new FileReader();
+  rd.onload = ()=>{
+    try{
+      const d = JSON.parse(rd.result);
+      if(!d || !Array.isArray(d.items) || !Array.isArray(d.entries)) throw 0;
+      if(!confirm("Replace current data with this backup ("+d.items.length+" items, "+d.entries.length+" entries)?")) return;
+      DB = { items:d.items, entries:d.entries, fx:Object.assign({},DEFAULT_FX,d.fx||{}) };
+      save(); render(); closeSheet(); toast("Backup restored");
+    }catch(e){ toast("Invalid backup file"); }
+  };
+  rd.readAsText(f); ev.target.value = "";
+};
+document.getElementById("wipeBtn").onclick = ()=>{
+  if(!confirm("Erase ALL data on this device? Export a backup first if unsure.")) return;
+  if(!confirm("Really erase everything?")) return;
+  DB = { items:[], entries:[], fx:{...DEFAULT_FX} };
+  save(); render(); closeSheet(); toast("All data erased");
+};
+
+/* ================= Ranges ================= */
+document.getElementById("ranges").onclick = e=>{
+  const b = e.target.closest("button"); if(!b) return;
+  curRange = +b.dataset.r;
+  document.querySelectorAll("#ranges button").forEach(x=>x.classList.toggle("on",x===b));
+  render();
+};
+
+/* ================= Boot ================= */
+render();
+window.addEventListener("resize", render);
+if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
+</script>
+</body>
+</html>
