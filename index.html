@@ -225,8 +225,12 @@ select.f-input{-webkit-appearance:none;appearance:none}
   <div class="grab"></div>
   <h2>Settings</h2>
   <div class="f-label">Exchange rates — IDR per 1 unit</div>
+  <div class="chips" style="margin-bottom:12px">
+    <button class="chip" id="fxAutoChip">Auto-update: on</button>
+    <button class="chip" id="fxRefreshBtn">Refresh now</button>
+  </div>
   <div id="fxList"></div>
-  <div class="hint">Rates are manual. Update them occasionally so conversions stay honest.</div>
+  <div class="hint" id="fxHint">Rates auto-refresh from a central-bank mid-market feed when the app opens. Manual edits hold until the next refresh.</div>
   <div class="f-label">Data</div>
   <button class="ghost-btn" id="exportBtn" style="margin-top:0">Export backup (JSON)</button>
   <button class="ghost-btn" id="importBtn">Import backup</button>
@@ -250,11 +254,30 @@ let DB = load();
 function load(){
   try{
     const raw = localStorage.getItem(LS_KEY);
-    if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.items) && Array.isArray(d.entries)){ d.fx = Object.assign({},DEFAULT_FX,d.fx||{}); return d; } }
+    if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.items) && Array.isArray(d.entries)){ d.fx = Object.assign({},DEFAULT_FX,d.fx||{}); if(d.fxAuto===undefined) d.fxAuto=true; return d; } }
   }catch(e){}
-  return { items:[], entries:[], fx:{...DEFAULT_FX} };
+  return { items:[], entries:[], fx:{...DEFAULT_FX}, fxAuto:true, fxTime:0 };
 }
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+
+/* Live FX: open.er-api.com (ExchangeRate-API open feed, daily central-bank mid-market rates) */
+async function fetchRates(force){
+  if(!DB.fxAuto && !force) return;
+  if(!force && DB.fxTime && Date.now()-DB.fxTime < 6*3600e3) return; // ≤6h old: skip
+  try{
+    const r = await fetch("https://open.er-api.com/v6/latest/USD", {cache:"no-store"});
+    const j = await r.json();
+    if(j.result!=="success" || !j.rates || !j.rates.IDR) return;
+    const idrPerUsd = j.rates.IDR;
+    for(const c of CURRENCIES){
+      if(c==="IDR") continue;
+      if(j.rates[c]) DB.fx[c] = Math.round(idrPerUsd / j.rates[c] * 100) / 100;
+    }
+    DB.fxTime = Date.now();
+    save(); render();
+    if(force) toast("Rates refreshed");
+  }catch(e){ if(force) toast("Offline — using stored rates"); }
+}
 
 const toIDR = (v,cur) => cur==="IDR" ? v : v * (DB.fx[cur]||0);
 const itemById = id => DB.items.find(i=>i.id===id);
@@ -264,9 +287,18 @@ function latestEntry(id, onOrBefore){
   if(!onOrBefore) return es[es.length-1]||null;
   let last=null; for(const e of es){ if(e.date<=onOrBefore) last=e; else break; } return last;
 }
+/* Conversion: historical points use the FX rate snapshotted on each entry
+   (tracks forex movement); the current position uses live rates. */
+function entryIDR(e, cur, historical){
+  if(cur==="IDR") return e.value;
+  const rate = historical ? (e.rate || DB.fx[cur] || 0) : (DB.fx[cur] || 0);
+  return e.value * rate;
+}
 function itemValueIDR(item, onOrBefore){
   const e = latestEntry(item.id, onOrBefore);
-  return e ? toIDR(e.value, item.currency) : null;
+  if(!e) return null;
+  const historical = !!onOrBefore && onOrBefore < todayStr();
+  return entryIDR(e, item.currency, historical);
 }
 function totals(onOrBefore){
   let a=0,l=0,any=false;
@@ -553,7 +585,9 @@ document.getElementById("saveBtn").onclick = ()=>{
     document.getElementById("newName").value = "";
   }
   if(!itemId){ toast("Pick an item"); return; }
-  DB.entries.push({ id: uid(), itemId, value: v, date, ts: Date.now() });
+  const cur = itemById(itemId).currency;
+  DB.entries.push({ id: uid(), itemId, value: v, date, ts: Date.now(),
+    rate: cur==="IDR" ? 1 : (DB.fx[cur] || 0) });  // FX snapshot at save time
   save(); render(); closeSheet(); toast("Saved");
 };
 
@@ -594,7 +628,9 @@ function refreshDetail(id){
   [...es].reverse().forEach(e=>{
     const r = document.createElement("div");
     r.className = "h-row";
-    r.innerHTML = `<div class="h-date num">${fmtDate(e.date)}</div>
+    const rateTag = (it.currency!=="IDR" && e.rate)
+      ? ` <span style="color:var(--faint)">@ ${new Intl.NumberFormat("en-US",{maximumFractionDigits:0}).format(e.rate)}</span>` : "";
+    r.innerHTML = `<div class="h-date num">${fmtDate(e.date)}${rateTag}</div>
       <div class="h-val num">${fmtNative(e.value,it.currency)}</div>
       <button class="h-btn" title="Edit">✏️</button>
       <button class="h-btn del" title="Delete">🗑</button>`;
@@ -621,7 +657,7 @@ function refreshDetail(id){
 }
 
 /* ================= Settings ================= */
-document.getElementById("settingsBtn").onclick = ()=>{
+function renderSettings(){
   const fl = document.getElementById("fxList");
   fl.innerHTML = "";
   for(const c of CURRENCIES.filter(c=>c!=="IDR")){
@@ -634,8 +670,17 @@ document.getElementById("settingsBtn").onclick = ()=>{
     };
     fl.appendChild(r);
   }
-  openSheet("settingsSheet");
-};
+  const chip = document.getElementById("fxAutoChip");
+  chip.textContent = "Auto-update: " + (DB.fxAuto ? "on" : "off");
+  chip.classList.toggle("on", !!DB.fxAuto);
+  document.getElementById("fxHint").textContent =
+    (DB.fxAuto ? "Rates auto-refresh from a central-bank mid-market feed when the app opens. Manual edits hold until the next refresh."
+               : "Auto-update is off — rates are fully manual.")
+    + (DB.fxTime ? " Last updated: " + new Date(DB.fxTime).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}) + "." : "");
+}
+document.getElementById("settingsBtn").onclick = ()=>{ renderSettings(); openSheet("settingsSheet"); };
+document.getElementById("fxAutoChip").onclick = ()=>{ DB.fxAuto = !DB.fxAuto; save(); renderSettings(); };
+document.getElementById("fxRefreshBtn").onclick = async ()=>{ await fetchRates(true); renderSettings(); };
 document.getElementById("exportBtn").onclick = ()=>{
   const blob = new Blob([JSON.stringify(DB,null,2)],{type:"application/json"});
   const a = document.createElement("a");
@@ -653,7 +698,7 @@ document.getElementById("importFile").onchange = ev=>{
       const d = JSON.parse(rd.result);
       if(!d || !Array.isArray(d.items) || !Array.isArray(d.entries)) throw 0;
       if(!confirm("Replace current data with this backup ("+d.items.length+" items, "+d.entries.length+" entries)?")) return;
-      DB = { items:d.items, entries:d.entries, fx:Object.assign({},DEFAULT_FX,d.fx||{}) };
+      DB = { items:d.items, entries:d.entries, fx:Object.assign({},DEFAULT_FX,d.fx||{}), fxAuto:d.fxAuto!==false, fxTime:d.fxTime||0 };
       save(); render(); closeSheet(); toast("Backup restored");
     }catch(e){ toast("Invalid backup file"); }
   };
@@ -662,7 +707,7 @@ document.getElementById("importFile").onchange = ev=>{
 document.getElementById("wipeBtn").onclick = ()=>{
   if(!confirm("Erase ALL data on this device? Export a backup first if unsure.")) return;
   if(!confirm("Really erase everything?")) return;
-  DB = { items:[], entries:[], fx:{...DEFAULT_FX} };
+  DB = { items:[], entries:[], fx:{...DEFAULT_FX}, fxAuto:true, fxTime:0 };
   save(); render(); closeSheet(); toast("All data erased");
 };
 
@@ -676,6 +721,8 @@ document.getElementById("ranges").onclick = e=>{
 
 /* ================= Boot ================= */
 render();
+fetchRates();
+document.addEventListener("visibilitychange", ()=>{ if(!document.hidden) fetchRates(); });
 window.addEventListener("resize", render);
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
 </script>
