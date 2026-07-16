@@ -79,15 +79,21 @@ header{padding:calc(14px + var(--sat)) 20px 6px}
 .row-chg{font-size:12px;font-weight:600;margin-top:2px}
 .row-chg.up{color:var(--green)} .row-chg.down{color:var(--red)} .row-chg.flat{color:var(--faint)}
 .empty{padding:28px 16px;text-align:center;color:var(--faint);font-size:14px;line-height:1.5}
-.grp{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:12px 16px 10px;
-  background:var(--card2);position:relative}
+.grp{display:flex;align-items:stretch;width:100%;background:var(--card2);position:relative}
 .grp:not(:first-child){border-top:1px solid var(--line)}
-.grp:active{background:var(--line)}
+.grp-main{flex:1;display:flex;align-items:center;gap:8px;text-align:left;padding:12px 8px 10px 14px;min-width:0}
+.grp-main:active{background:var(--line)}
+.grp-open{display:flex;align-items:center;gap:7px;padding:12px 14px 10px 8px}
+.grp-open:active{background:var(--line)}
+.grp-caret{font-size:10px;color:var(--faint);width:12px;transition:transform .2s;display:inline-block}
+.grp.closed .grp-caret{transform:rotate(-90deg)}
 .grp-ico{font-size:14px}
-.grp-name{flex:1;font-size:13px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--muted)}
+.grp-name{font-size:13px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .grp-n{margin-left:6px;font-size:11px;font-weight:700;color:var(--faint);background:var(--card);border-radius:99px;padding:1px 7px}
 .grp-val{font-size:13px;font-weight:700;color:var(--text)}
 .grp-chev{color:var(--faint);font-size:16px;font-weight:700}
+.row.sub{padding-left:34px}
+.row.sub + .row.sub::before{left:34px}
 .empty b{color:var(--muted)}
 
 /* ---------- FAB ---------- */
@@ -284,6 +290,11 @@ function load(){
   return { items:[], entries:[], fx:{...DEFAULT_FX}, fxAuto:true, fxTime:0 };
 }
 function save(){ localStorage.setItem(LS_KEY, JSON.stringify(DB)); }
+
+/* UI prefs (collapsed groups) — separate from data so backups stay clean */
+let UI = { collapsed:{} };
+try{ UI = Object.assign(UI, JSON.parse(localStorage.getItem("networth.ui")||"{}")); }catch(e){}
+const saveUI = ()=>localStorage.setItem("networth.ui", JSON.stringify(UI));
 
 /* Live rates:
    - Forex: open.er-api.com (daily central-bank mid-market rates)
@@ -491,7 +502,7 @@ function render(){
   renderAssetGroups();
   renderRows("liabRows", DB.items.filter(i=>i.type==="liability"), "liability");
 }
-function makeRow(it){
+function makeRow(it, sub){
   const es = entriesOf(it.id);
   const last = es[es.length-1], prev = es[es.length-2];
   let chg = `<span class="row-chg flat">–</span>`;
@@ -502,7 +513,7 @@ function makeRow(it){
       : `<span class="row-chg ${good?"up":"down"}">${d>0?"+":"−"}${fmtCompact(Math.abs(toIDR(d,it.currency)))}</span>`;
   }
   const btn = document.createElement("button");
-  btn.className = "row"; btn.dataset.id = it.id;
+  btn.className = "row" + (sub ? " sub" : ""); btn.dataset.id = it.id;
   btn.innerHTML = `
     <div class="row-main">
       <div class="row-name">${esc(it.name)}</div>
@@ -529,16 +540,27 @@ function renderAssetGroups(){
     .map(g=>({...g, total: g.items.reduce((s,i)=>s+(itemValueIDR(i)||0),0)}))
     .sort((a,b)=>b.total-a.total);
   for(const g of groups){
-    const gh = document.createElement("button");
-    gh.className = "grp";
+    const closed = !!UI.collapsed[g.cat];
+    const gh = document.createElement("div");
+    gh.className = "grp" + (closed ? " closed" : "");
     gh.innerHTML = `
-      <span class="grp-ico">${CAT_ICONS[g.cat]}</span>
-      <span class="grp-name">${g.cat}<span class="grp-n">${g.items.length}</span></span>
-      <span class="grp-val num">${fmtIDRfull(g.total)}</span>
-      <span class="grp-chev">›</span>`;
-    gh.onclick = ()=>openCat(g.cat);
+      <button class="grp-main">
+        <span class="grp-caret">▾</span>
+        <span class="grp-ico">${CAT_ICONS[g.cat]}</span>
+        <span class="grp-name">${g.cat}<span class="grp-n">${g.items.length}</span></span>
+      </button>
+      <button class="grp-open">
+        <span class="grp-val num">${fmtIDRfull(g.total)}</span>
+        <span class="grp-chev">›</span>
+      </button>`;
+    gh.querySelector(".grp-main").onclick = ()=>{
+      UI.collapsed[g.cat] = !UI.collapsed[g.cat];
+      saveUI(); renderAssetGroups();
+    };
+    gh.querySelector(".grp-open").onclick = ()=>openCat(g.cat);
     el.appendChild(gh);
-    [...g.items].sort((a,b)=>(itemValueIDR(b)||0)-(itemValueIDR(a)||0)).forEach(it=>el.appendChild(makeRow(it)));
+    if(!closed)
+      [...g.items].sort((a,b)=>(itemValueIDR(b)||0)-(itemValueIDR(a)||0)).forEach(it=>el.appendChild(makeRow(it, true)));
   }
 }
 function renderRows(elId, items, type){
