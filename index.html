@@ -1015,22 +1015,25 @@ function flowTotals(month){
   }
   return { inc, exp, net: inc-exp };
 }
-/* Continuous month range from first real entry to current month (max 18 shown) */
-function flowMonthsRange(){
+/* Calendar-year view: always Jan–Dec of the given year.
+   A month is "active" (has bars) only between the first real entry and the
+   current month — or if it holds explicit entries. Future/pre-history months
+   stay empty; recurring-line projections never fabricate bars. */
+function flowYearData(year){
   const cur = todayStr().slice(0,7);
-  const em = DB.flowEntries.map(e=>e.month).sort();
-  let m = em.length ? em[0] : cur;
-  if(flowMonth < m) m = flowMonth;
-  let end = cur;
-  if(em.length && em[em.length-1] > end) end = em[em.length-1]; // future-dated entries stay visible
-  if(flowMonth > end) end = flowMonth;
-  const months = [];
-  let guard = 0;
-  while(m <= end && guard++ < 36){ months.push(m); m = shiftMonth(m,1); }
-  return months.slice(-18);
+  const em = new Set(DB.flowEntries.map(e=>e.month));
+  const sorted = [...em].sort();
+  const first = sorted.length ? sorted[0] : cur;
+  const out = [];
+  for(let i=1;i<=12;i++){
+    const m = year+"-"+String(i).padStart(2,"0");
+    const active = (m>=first && m<=cur) || em.has(m);
+    out.push(active ? {month:m, active:true, ...flowTotals(m)} : {month:m, active:false, inc:0, exp:0, net:0});
+  }
+  return out;
 }
-function flowSeriesData(){ return flowMonthsRange().map(m=>({month:m, ...flowTotals(m)})); }
-const flowSeries = flowSeriesData; // series of {month, inc, exp, net}
+function flowSeriesData(){ return flowYearData(flowMonth.slice(0,4)); }
+const flowSeries = ()=>flowSeriesData().filter(d=>d.active); // active months only
 
 /* Monthly In/Out bar chart; tap a month to select it */
 function drawFlowBars(svg, data, sel){
@@ -1042,22 +1045,24 @@ function drawFlowBars(svg, data, sel){
     return;
   }
   const px=14, pb=24, pt=10;
-  const max = Math.max(...data.map(d=>Math.max(d.inc,d.exp)), 1);
+  const max = Math.max(...data.filter(d=>d.active!==false).map(d=>Math.max(d.inc,d.exp)), 1);
   const slot = (W-2*px)/data.length;
   const bw = Math.max(4, Math.min(16, slot*0.3));
-  const lblEvery = Math.max(1, Math.ceil(data.length/8));
   let html = `<line x1="${px}" y1="${H-pb}" x2="${W-px}" y2="${H-pb}" stroke="#242b37"/>`;
   data.forEach((d,i)=>{
     const cx = px + slot*(i+0.5);
+    const active = d.active!==false;
     const hIn  = d.inc/max*(H-pb-pt);
     const hOut = d.exp/max*(H-pb-pt);
-    html += `<g data-m="${d.month}" opacity="${sel===d.month?1:0.45}" style="cursor:pointer">
-      <rect x="${(cx-bw-1).toFixed(1)}" y="${(H-pb-hIn).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hIn,1.5).toFixed(1)}" rx="2.5" fill="#34d98b"/>
-      <rect x="${(cx+1).toFixed(1)}" y="${(H-pb-hOut).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hOut,1.5).toFixed(1)}" rx="2.5" fill="#ff5d5d"/>
-      <rect x="${(cx-slot/2).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H}" fill="transparent"/>
-    </g>`;
-    if(sel===d.month || i%lblEvery===0)
-      html += `<text x="${cx.toFixed(1)}" y="${H-8}" fill="${sel===d.month?"#f2f4f8":"#5a6272"}" font-size="10" font-weight="${sel===d.month?700:400}" text-anchor="middle">${new Date(d.month+"-01T12:00:00").toLocaleDateString("en-GB",{month:"short"})}</text>`;
+    html += `<g data-m="${d.month}" opacity="${sel===d.month?1:0.45}" style="cursor:pointer">`;
+    if(active){
+      html += `<rect x="${(cx-bw-1).toFixed(1)}" y="${(H-pb-hIn).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hIn,1.5).toFixed(1)}" rx="2.5" fill="#34d98b"/>
+        <rect x="${(cx+1).toFixed(1)}" y="${(H-pb-hOut).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hOut,1.5).toFixed(1)}" rx="2.5" fill="#ff5d5d"/>`;
+    } else {
+      html += `<rect x="${(cx-bw-1).toFixed(1)}" y="${H-pb-2}" width="${(2*bw+2).toFixed(1)}" height="2" rx="1" fill="#242b37"/>`;
+    }
+    html += `<rect x="${(cx-slot/2).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H}" fill="transparent"/></g>`;
+    html += `<text x="${cx.toFixed(1)}" y="${H-8}" fill="${sel===d.month?"#f2f4f8":"#5a6272"}" font-size="9" font-weight="${sel===d.month?700:400}" text-anchor="middle">${new Date(d.month+"-01T12:00:00").toLocaleDateString("en-GB",{month:"short"})}</text>`;
   });
   svg.innerHTML = html;
   svg.querySelectorAll("g[data-m]").forEach(g=>{
@@ -1076,12 +1081,13 @@ function renderFlow(){
   document.getElementById("flowOutPill").textContent = "Out " + fmtCompact(t.exp);
   document.getElementById("flowNext").disabled = flowMonth >= todayStr().slice(0,7);
 
-  const series = flowSeriesData();
+  const year = flowMonth.slice(0,4);
+  const series = flowYearData(year);
   drawFlowBars(document.getElementById("flowChart"), series, flowMonth);
-  const recent = series.slice(-6);
-  const avg = recent.length ? recent.reduce((s,p)=>s+p.net,0)/recent.length : 0;
+  const act = series.filter(d=>d.active);
+  const avg = act.length ? act.reduce((s,p)=>s+p.net,0)/act.length : 0;
   document.getElementById("flowScrub").textContent =
-    recent.length>1 ? `${recent.length}-month avg net: ${avg>=0?"+":"−"}${fmtCompact(Math.abs(avg))} · tap a month to inspect` : "";
+    act.length ? `${year}: ${act.length} month${act.length===1?"":"s"} · avg net ${avg>=0?"+":"−"}${fmtCompact(Math.abs(avg))}/mo · tap a bar to inspect` : `No activity in ${year} yet`;
 
   renderFlowRows("flowInRows","in");
   renderFlowRows("flowOutRows","out");
