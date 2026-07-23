@@ -993,6 +993,14 @@ let flowMonth = todayStr().slice(0,7); // "YYYY-MM"
 const monthLabel = m => new Date(m+"-01T12:00:00").toLocaleDateString("en-GB",{month:"long",year:"numeric"});
 const shiftMonth = (m,d) => { const dt=new Date(m+"-01T12:00:00"); dt.setMonth(dt.getMonth()+d); return dt.toISOString().slice(0,7); };
 const entryFor = (lineId,month) => DB.flowEntries.find(e=>e.lineId===lineId && e.month===month);
+/* Prefill for a pending month = the most recently recorded actual before it;
+   original line amount only as last resort. */
+function latestLineAmount(line, month){
+  const before = DB.flowEntries.filter(e=>e.lineId===line.id && e.month<month)
+    .sort((a,b)=>a.month<b.month?-1:1);
+  if(before.length) return before[before.length-1].amount;
+  return line.expected;
+}
 /* Resolved rows for a month: recurring lines (with saved actuals) + ad-hoc entries */
 function flowRows(month, dir){
   const rows = [];
@@ -1000,7 +1008,7 @@ function flowRows(month, dir){
     if(ln.dir!==dir) continue;
     const e = entryFor(ln.id, month);
     rows.push({ kind:"line", line:ln, entry:e, name:ln.name, cat:ln.category, dir:ln.dir,
-      amount: e ? e.amount : ln.expected, confirmed: !!e });
+      amount: e ? e.amount : latestLineAmount(ln, month), confirmed: !!e });
   }
   for(const e of DB.flowEntries){
     if(e.lineId!==null || e.month!==month || e.dir!==dir) continue;
@@ -1116,7 +1124,7 @@ function renderFlowRows(elId, dir){
       ev.stopPropagation();
       if(r.kind!=="line") return;
       if(r.confirmed){ DB.flowEntries = DB.flowEntries.filter(e=>!(e.lineId===r.line.id&&e.month===flowMonth)); }
-      else { DB.flowEntries.push({ id:uid(), lineId:r.line.id, month:flowMonth, name:r.line.name, dir:r.line.dir, category:r.line.category, amount:r.line.expected }); }
+      else { DB.flowEntries.push({ id:uid(), lineId:r.line.id, month:flowMonth, name:r.line.name, dir:r.line.dir, category:r.line.category, amount:r.amount }); }
       save(); renderFlow();
     });
     btn.onclick = ()=> r.kind==="adhoc" ? openFlowEdit(r.entry) : openFlowLineMonth(r.line);
@@ -1143,7 +1151,7 @@ function openFlowNew(dir){
   flowSel = { mode:"new", dir, lineId:null, entryId:null };
   document.getElementById("flowTitle").textContent = "Add line";
   document.getElementById("flowDirSeg").style.display="";
-  setFlowDir(dir); setFlowRepeat(1);
+  setFlowDir(dir); setFlowRepeat(0); // default one-off: safer failure mode than phantom recurring
   document.getElementById("flowName").value=""; document.getElementById("flowAmt").value="";
   document.getElementById("flowDeleteBtn").style.display="none";
   flowRepeatWrap(true);
@@ -1163,7 +1171,7 @@ function openFlowLineMonth(line){
   setFlowDir(line.dir); flowCatSel.value=line.category;
   document.getElementById("flowName").value=line.name;
   const e = entryFor(line.id, flowMonth);
-  document.getElementById("flowAmt").value=""; groupSetFlow(e?e.amount:line.expected);
+  document.getElementById("flowAmt").value=""; groupSetFlow(e ? e.amount : latestLineAmount(line, flowMonth));
   flowRepeatWrap(false);
   document.getElementById("flowDeleteBtn").style.display=""; document.getElementById("flowDeleteBtn").textContent="Delete recurring line";
   openSheet("flowSheet");
