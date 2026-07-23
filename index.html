@@ -965,7 +965,8 @@ document.getElementById("importFile").onchange = ev=>{
       const d = JSON.parse(rd.result);
       if(!d || !Array.isArray(d.items) || !Array.isArray(d.entries)) throw 0;
       if(!confirm("Replace current data with this backup ("+d.items.length+" items, "+d.entries.length+" entries)?")) return;
-      DB = { items:d.items, entries:d.entries, fx:Object.assign({},DEFAULT_FX,d.fx||{}), fxAuto:d.fxAuto!==false, fxTime:d.fxTime||0 };
+      DB = { items:d.items, entries:d.entries, fx:Object.assign({},DEFAULT_FX,d.fx||{}), fxAuto:d.fxAuto!==false, fxTime:d.fxTime||0,
+             flowLines: Array.isArray(d.flowLines)?d.flowLines:[], flowEntries: Array.isArray(d.flowEntries)?d.flowEntries:[] };
       DB.items.forEach(i=>{ if(!i.category) i.category = i.type==="liability" ? "Liabilities" : (i.currency==="GOLD" ? "Gold & Metals" : "Other"); });
       save(); render(); closeSheet(); toast("Backup restored");
     }catch(e){ toast("Invalid backup file"); }
@@ -975,7 +976,7 @@ document.getElementById("importFile").onchange = ev=>{
 document.getElementById("wipeBtn").onclick = ()=>{
   if(!confirm("Erase ALL data on this device? Export a backup first if unsure.")) return;
   if(!confirm("Really erase everything?")) return;
-  DB = { items:[], entries:[], fx:{...DEFAULT_FX}, fxAuto:true, fxTime:0 };
+  DB = { items:[], entries:[], fx:{...DEFAULT_FX}, fxAuto:true, fxTime:0, flowLines:[], flowEntries:[] };
   save(); render(); closeSheet(); toast("All data erased");
 };
 
@@ -1014,17 +1015,54 @@ function flowTotals(month){
   }
   return { inc, exp, net: inc-exp };
 }
-/* Months that have any activity (lines active or entries), for the trend chart */
-function flowMonthsWithData(){
-  const set = new Set(DB.flowEntries.map(e=>e.month));
-  // recurring lines apply to every month from earliest entry/this month back 12
-  if(DB.flowLines.length){
-    for(let i=0;i<12;i++) set.add(shiftMonth(todayStr().slice(0,7), -i));
-  }
-  return [...set].sort();
+/* Continuous month range from first real entry to current month (max 18 shown) */
+function flowMonthsRange(){
+  const cur = todayStr().slice(0,7);
+  const em = DB.flowEntries.map(e=>e.month).sort();
+  let m = em.length ? em[0] : cur;
+  if(flowMonth < m) m = flowMonth;
+  let end = cur;
+  if(em.length && em[em.length-1] > end) end = em[em.length-1]; // future-dated entries stay visible
+  if(flowMonth > end) end = flowMonth;
+  const months = [];
+  let guard = 0;
+  while(m <= end && guard++ < 36){ months.push(m); m = shiftMonth(m,1); }
+  return months.slice(-18);
 }
-function flowSeries(){
-  return flowMonthsWithData().map(m=>({date:m+"-15", v:flowTotals(m).net, month:m}));
+function flowSeriesData(){ return flowMonthsRange().map(m=>({month:m, ...flowTotals(m)})); }
+const flowSeries = flowSeriesData; // series of {month, inc, exp, net}
+
+/* Monthly In/Out bar chart; tap a month to select it */
+function drawFlowBars(svg, data, sel){
+  const W = svg.clientWidth || 360, H = 190;
+  svg.setAttribute("viewBox",`0 0 ${W} ${H}`);
+  svg.innerHTML = "";
+  if(!data.length || data.every(d=>!d.inc && !d.exp)){
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" fill="#5a6272" font-size="13" text-anchor="middle">No data yet</text>`;
+    return;
+  }
+  const px=14, pb=24, pt=10;
+  const max = Math.max(...data.map(d=>Math.max(d.inc,d.exp)), 1);
+  const slot = (W-2*px)/data.length;
+  const bw = Math.max(4, Math.min(16, slot*0.3));
+  const lblEvery = Math.max(1, Math.ceil(data.length/8));
+  let html = `<line x1="${px}" y1="${H-pb}" x2="${W-px}" y2="${H-pb}" stroke="#242b37"/>`;
+  data.forEach((d,i)=>{
+    const cx = px + slot*(i+0.5);
+    const hIn  = d.inc/max*(H-pb-pt);
+    const hOut = d.exp/max*(H-pb-pt);
+    html += `<g data-m="${d.month}" opacity="${sel===d.month?1:0.45}" style="cursor:pointer">
+      <rect x="${(cx-bw-1).toFixed(1)}" y="${(H-pb-hIn).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hIn,1.5).toFixed(1)}" rx="2.5" fill="#34d98b"/>
+      <rect x="${(cx+1).toFixed(1)}" y="${(H-pb-hOut).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(hOut,1.5).toFixed(1)}" rx="2.5" fill="#ff5d5d"/>
+      <rect x="${(cx-slot/2).toFixed(1)}" y="0" width="${slot.toFixed(1)}" height="${H}" fill="transparent"/>
+    </g>`;
+    if(sel===d.month || i%lblEvery===0)
+      html += `<text x="${cx.toFixed(1)}" y="${H-8}" fill="${sel===d.month?"#f2f4f8":"#5a6272"}" font-size="10" font-weight="${sel===d.month?700:400}" text-anchor="middle">${new Date(d.month+"-01T12:00:00").toLocaleDateString("en-GB",{month:"short"})}</text>`;
+  });
+  svg.innerHTML = html;
+  svg.querySelectorAll("g[data-m]").forEach(g=>{
+    g.addEventListener("click", ()=>{ flowMonth = g.getAttribute("data-m"); renderFlow(); });
+  });
 }
 
 function renderFlow(){
@@ -1038,9 +1076,12 @@ function renderFlow(){
   document.getElementById("flowOutPill").textContent = "Out " + fmtCompact(t.exp);
   document.getElementById("flowNext").disabled = flowMonth >= todayStr().slice(0,7);
 
-  drawChart(document.getElementById("flowChart"), flowSeries().map(p=>({date:p.date,v:p.v})), {height:190, stroke:"auto", scrub:p=>{
-    document.getElementById("flowScrub").textContent = p ? monthLabel(p.date.slice(0,7))+" · "+(p.v>=0?"+":"−")+fmtIDRfull(Math.abs(p.v)) : "";
-  }});
+  const series = flowSeriesData();
+  drawFlowBars(document.getElementById("flowChart"), series, flowMonth);
+  const recent = series.slice(-6);
+  const avg = recent.length ? recent.reduce((s,p)=>s+p.net,0)/recent.length : 0;
+  document.getElementById("flowScrub").textContent =
+    recent.length>1 ? `${recent.length}-month avg net: ${avg>=0?"+":"−"}${fmtCompact(Math.abs(avg))} · tap a month to inspect` : "";
 
   renderFlowRows("flowInRows","in");
   renderFlowRows("flowOutRows","out");
